@@ -47,31 +47,41 @@ if not user_prompt.strip():
 messages = [
 types.Content(role="user", parts=[types.Part(text=user_prompt)]),
 ]
-
-response = client.models.generate_content(
-model="gemini-2.0-flash-001",
-contents=messages,
-config=types.GenerateContentConfig(tools=[available_functions],system_instruction=system_prompt),
-)
-used_functions = response.function_calls
-called = False
-if used_functions:
-    called = True
-    for function_call_part in used_functions:
-        function_call_result = call_function(function_call_part, args.verbose)
-        if not function_call_result.parts[0].function_response.response:
-            raise Exception("Fatal exception of some sort")
-        if args.verbose:
-            print(f"-> {function_call_result.parts[0].function_response.response}")
-
+for _ in range(20):
+    try:    
+        response = client.models.generate_content(
+        model="gemini-2.0-flash-001",
+        contents=messages,
+        config=types.GenerateContentConfig(tools=[available_functions],system_instruction=system_prompt),
+        )
+        for candidate in response.candidates:
+            messages.append(candidate.content)
+        used_functions = response.function_calls
+    
+        if used_functions:
+            for function_call_part in used_functions:
+                function_call_result = call_function(function_call_part, args.verbose)
+                response_dict = function_call_result.parts[0].function_response.response
+                messages.append(function_call_result)
+                if 'error' in response_dict:
+                    print(f"Error calling function: {response_dict['error']}")
+                    break
+                if args.verbose:
+                    print(f"-> {response_dict}")
+        else:
+            print("Final response:")
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if hasattr(part, "text"):
+                        print(part.text)
+            break
+    except Exception as e:
+        print(f"Error: {e}")
+        break
 
 if args.verbose:
     print(f"User prompt: {user_prompt}")
-    if not called:
-        print(response.text)
     print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
     print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
-else:
-    if not called:
-        print(response.text)
+
 
